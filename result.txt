@@ -1,0 +1,3 @@
+communication simulation start
+now SNR: 10
+error
