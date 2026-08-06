@@ -1,5 +1,5 @@
 import random
-snr = 10
+snr = 20
 error = random.random()
 print("communication simulation start")
 print("now SNR:",snr)
