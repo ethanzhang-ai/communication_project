@@ -1,3 +1,4 @@
+import argparse
 import csv
 import time
 from pathlib import Path
@@ -11,31 +12,119 @@ from bpsk_simulation import (
 from plot_results import plot_ber_curve
 
 
+def parse_arguments():
+    """读取用户在终端中输入的仿真参数。"""
+
+    parser = argparse.ArgumentParser(
+        description="Simulate BPSK BER over an AWGN channel."
+    )
+
+    parser.add_argument(
+        "--min-eb-n0",
+        type=int,
+        default=0,
+        help="Minimum Eb/N0 in dB. Default: 0",
+    )
+
+    parser.add_argument(
+        "--max-eb-n0",
+        type=int,
+        default=10,
+        help="Maximum Eb/N0 in dB. Default: 10",
+    )
+
+    parser.add_argument(
+        "--step",
+        type=int,
+        default=2,
+        help="Eb/N0 step in dB. Default: 2",
+    )
+
+    parser.add_argument(
+        "--target-errors",
+        type=int,
+        default=200,
+        help="Target number of bit errors. Default: 200",
+    )
+
+    parser.add_argument(
+        "--max-bits",
+        type=int,
+        default=10_000_000,
+        help="Maximum simulated bits per point. Default: 10000000",
+    )
+
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=10_000,
+        help="Number of bits per NumPy batch. Default: 10000",
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed. Default: 42",
+    )
+
+    return parser.parse_args()
+
+
 def main():
     """运行完整的BPSK误码率实验。"""
 
-    # 确定项目目录和输出文件位置
+    # 读取命令行参数
+    args = parse_arguments()
+
+    # 检查参数是否合理
+    if args.min_eb_n0 > args.max_eb_n0:
+        raise ValueError(
+            "min-eb-n0不能大于max-eb-n0"
+        )
+
+    if args.step <= 0:
+        raise ValueError("step必须大于0")
+
+    if args.target_errors <= 0:
+        raise ValueError("target-errors必须大于0")
+
+    if args.max_bits <= 0:
+        raise ValueError("max-bits必须大于0")
+
+    if args.batch_size <= 0:
+        raise ValueError("batch-size必须大于0")
+
+    # 确定项目目录
     project_directory = Path(__file__).resolve().parent
 
     csv_path = project_directory / "ber_results.csv"
     image_path = project_directory / "ber_curve_numpy.png"
 
     # 创建随机数生成器
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(args.seed)
 
-    # 设置仿真参数
-    target_errors = 200
-    max_bits = 10_000_000
-    batch_size = 10_000
+    # 生成需要测试的Eb/N0列表
+    simulation_eb_n0_db = list(
+        range(
+            args.min_eb_n0,
+            args.max_eb_n0 + 1,
+            args.step,
+        )
+    )
 
-    # 测试0、2、4、6、8、10 dB
-    simulation_eb_n0_db = list(range(0, 11, 2))
-
-    # 保存绘图和CSV数据
     simulation_ber = []
     simulation_results = []
 
-    # 依次测试每个Eb/N0
+    print("Simulation settings:")
+    print(f"  Eb/N0 points: {simulation_eb_n0_db}")
+    print(f"  Target errors: {args.target_errors}")
+    print(f"  Maximum bits: {args.max_bits}")
+    print(f"  Batch size: {args.batch_size}")
+    print(f"  Random seed: {args.seed}")
+    print()
+
+    # 依次仿真每一个Eb/N0
     for eb_n0_db in simulation_eb_n0_db:
         start_time = time.perf_counter()
 
@@ -43,9 +132,9 @@ def main():
             simulate_ber_vectorized(
                 eb_n0_db=eb_n0_db,
                 rng=rng,
-                target_errors=target_errors,
-                max_bits=max_bits,
-                batch_size=batch_size,
+                target_errors=args.target_errors,
+                max_bits=args.max_bits,
+                batch_size=args.batch_size,
             )
         )
 
@@ -59,13 +148,11 @@ def main():
 
         simulation_ber.append(ber)
 
-        # 判断仿真为什么停止
-        if error_count >= target_errors:
+        if error_count >= args.target_errors:
             stop_reason = "target errors reached"
         else:
             stop_reason = "maximum bits reached"
 
-        # 保存本次实验数据
         simulation_results.append([
             eb_n0_db,
             ber,
@@ -76,7 +163,6 @@ def main():
             stop_reason,
         ])
 
-        # 在终端显示本次结果
         print(
             f"Eb/N0: {eb_n0_db:2d} dB | "
             f"Bits: {simulated_bits:9d} | "
@@ -87,7 +173,7 @@ def main():
             f"{stop_reason}"
         )
 
-    # 写入CSV文件
+    # 保存CSV
     with csv_path.open(
         mode="w",
         newline="",
@@ -107,7 +193,7 @@ def main():
 
         writer.writerows(simulation_results)
 
-    # 绘制BER曲线
+    # 绘制曲线
     plot_ber_curve(
         simulation_eb_n0_db=simulation_eb_n0_db,
         simulation_ber=simulation_ber,
