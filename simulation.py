@@ -3,22 +3,34 @@ import math
 import matplotlib.pyplot as plt
 
 
-def simulate_ber(eb_n0_db, total_bits):
-    """模拟一个Eb/N0条件下的BPSK误码率。"""
+def simulate_ber(
+    eb_n0_db,
+    target_errors=200,
+    max_bits=2_000_000,
+):
+    """自适应模拟一个Eb/N0条件下的BPSK误码率。"""
 
+    # 把Eb/N0从dB转换为线性值
     eb_n0_linear = 10 ** (eb_n0_db / 10)
+
+    # 根据Eb/N0计算AWGN标准差
     noise_std = math.sqrt(1 / (2 * eb_n0_linear))
 
     error_count = 0
+    simulated_bits = 0
 
-    for _ in range(total_bits):
+    # 没有收集够误码，并且没有达到最大比特数时继续
+    while (
+        error_count < target_errors
+        and simulated_bits < max_bits
+    ):
         # 产生随机比特
         bit = random.randint(0, 1)
 
-        # BPSK调制：0映射为-1，1映射为+1
+        # BPSK调制
         transmitted_signal = 1 if bit == 1 else -1
 
-        # AWGN信道
+        # 通过AWGN信道
         noise = random.gauss(0, noise_std)
         received_signal = transmitted_signal + noise
 
@@ -29,49 +41,74 @@ def simulate_ber(eb_n0_db, total_bits):
         if received_bit != bit:
             error_count += 1
 
-    return error_count / total_bits
+        # 无论是否误码，都发送了一个比特
+        simulated_bits += 1
+
+    ber = error_count / simulated_bits
+
+    return ber, error_count, simulated_bits
 
 
-# 固定随机种子，使每次运行可以得到相同结果
+# 固定随机种子，保证结果可以复现
 random.seed(42)
 
-total_bits = 100000
+target_errors = 200
+max_bits = 2_000_000
 
-# 仿真点：0、2、4、6、8 dB
+# 仿真0、2、4、6、8 dB
 simulation_eb_n0_db = list(range(0, 9, 2))
 simulation_ber = []
 
 for eb_n0_db in simulation_eb_n0_db:
-    ber = simulate_ber(eb_n0_db, total_bits)
+    ber, error_count, simulated_bits = simulate_ber(
+        eb_n0_db,
+        target_errors,
+        max_bits,
+    )
+
     simulation_ber.append(ber)
 
     theoretical_ber = 0.5 * math.erfc(
         math.sqrt(10 ** (eb_n0_db / 10))
     )
 
+    if error_count >= target_errors:
+        stop_reason = "reached target errors"
+    else:
+        stop_reason = "reached maximum bits"
+
     print(
         f"Eb/N0: {eb_n0_db:2d} dB | "
+        f"Bits: {simulated_bits:8d} | "
+        f"Errors: {error_count:3d} | "
         f"Simulation BER: {ber:.3e} | "
-        f"Theoretical BER: {theoretical_ber:.3e}"
+        f"Theoretical BER: {theoretical_ber:.3e} | "
+        f"{stop_reason}"
     )
 
 
-# 生成更平滑的理论曲线：0～10 dB，每隔0.1 dB取一点
-theory_eb_n0_db = [value / 10 for value in range(0, 101)]
+# 生成0～10 dB的平滑理论曲线
+theory_eb_n0_db = [
+    value / 10
+    for value in range(0, 101)
+]
 
 theory_ber = [
-    0.5 * math.erfc(math.sqrt(10 ** (value / 10)))
+    0.5 * math.erfc(
+        math.sqrt(10 ** (value / 10))
+    )
     for value in theory_eb_n0_db
 ]
 
 
-# 绘图
+# 绘制理论曲线
 plt.semilogy(
     theory_eb_n0_db,
     theory_ber,
     label="Theoretical BPSK",
 )
 
+# 绘制仿真结果
 plt.semilogy(
     simulation_eb_n0_db,
     simulation_ber,
@@ -86,5 +123,12 @@ plt.grid(True, which="both")
 plt.legend()
 plt.ylim(1e-6, 1)
 
-plt.savefig("ber_curve.png", dpi=200, bbox_inches="tight")
-plt.show()
+plt.savefig(
+    "ber_curve.png",
+    dpi=200,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+print("Curve saved as ber_curve.png")
