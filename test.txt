@@ -1,4 +1,0 @@
-SSH test
-Second test
-Git test successful git add .
-Git test successful
